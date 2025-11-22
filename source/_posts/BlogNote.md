@@ -1,6 +1,6 @@
 ---
-title: MyPersonalBlog
-MadeWithVue&&Springboot2
+title: "MyPersonalBlog \
+MadeWithVue&&Springboot2"
 ---
 
 # 博客项目开发笔记
@@ -169,5 +169,6 @@ graph TD
 2. **会话管理**：通过Redis存储会话信息，支持用户主动登出
 3. **敏感信息保护**：密码等敏感信息在数据库中加密存储
 4. **细粒度控制**：可以精确控制每个接口的访问权限
+
 
 
