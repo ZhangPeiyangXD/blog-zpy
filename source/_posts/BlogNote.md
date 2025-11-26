@@ -1,4 +1,4 @@
-# 📝 博客项目笔记
+# 📝 zpy博客项目笔记
                                **-zpy**
 
 >对原先的前端进行了修改，前后端源码一并去我的github自取：https://github.com/ZhangPeiyangXD    
@@ -8,7 +8,7 @@
 ![image3.jpg](http://t67owqh6r.hn-bkt.clouddn.com/9c73e7a4-b80c-4dab-999d-aac46d507f6f.jpg)
       
 ## 🗂️ 项目结构
-
+    
 ```
 blog-parent
 ├── blog-api
@@ -44,6 +44,9 @@ blog-parent
 - 注册 `/register`
 - 登出 `/logout`
 - JWT Token验证
+
+### 🔍 搜索模块
+- 文章搜索 `/search/article`
 
 ### 📰 文章模块
 - 文章列表 `/articles`
@@ -173,7 +176,8 @@ public class WebMVCConfig implements WebMvcConfigurer {
                         "/tags/**",
                         "/comments/**",
                         "/categorys/**",
-                        "/users/currentUser");
+                        "/users/currentUser",
+                        "/search/article");
     }
 }
 ```
@@ -335,6 +339,76 @@ public class LoginInterceptor implements HandlerInterceptor {
 2. **Redis会话验证**：检查Redis中是否存在对应的用户会话信息
 
 只有两个验证都通过，才认为用户身份有效。
+
+### 🔍 搜索服务实现
+
+搜索服务负责处理文章标题的模糊搜索功能。
+
+```java
+@RestController
+@RequestMapping("/search")
+public class SearchController {
+
+    @Autowired
+    private ArticleService articleService;
+
+    /**
+     * 搜索文章接口
+     * @param search 搜索关键字
+     * @return 搜索结果
+     */
+    @GetMapping("/article")
+    @LogAnnotation(module = "搜索", operator = "搜索文章")
+    public Result searchArticles(@RequestParam String search) {
+        List<HotArticleVo> articles = articleService.searchArticles(search);
+        return Result.success(articles);
+    }
+}
+```
+
+```java
+@Service
+public class ArticleServiceImpl implements ArticleService {
+    
+    // ... 其他代码 ...
+    
+    @Override
+    public List<HotArticleVo> searchArticles(String search) {
+        LambdaQueryWrapper<Article> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.like(Article::getTitle, search);
+        queryWrapper.last("LIMIT 5");
+        List<Article> articles = articleMapper.selectList(queryWrapper);
+        
+        List<HotArticleVo> articleVos = new ArrayList<>();
+        for (Article article : articles) {
+            HotArticleVo hotArticleVo = new HotArticleVo();
+            hotArticleVo.setId(article.getId());
+            hotArticleVo.setTitle(article.getTitle());
+            articleVos.add(hotArticleVo);
+        }
+        return articleVos;
+    }
+}
+```
+
+#### 🔄 搜索功能设计
+
+搜索功能采用简单的模糊匹配方式：
+- 用户输入关键词后实时搜索匹配的文章标题
+- 限制最多返回5条结果
+- 无需用户登录即可使用
+
+数据库查询语句：
+```sql
+SELECT id, title FROM article WHERE title LIKE '%关键词%' LIMIT 5
+```
+
+#### 🛡️ 安全配置
+
+搜索接口已配置为公开接口，无需用户登录即可访问：
+```java
+.excludePathPatterns("/search/article");
+```
 
 ### 💬 评论服务实现
 
@@ -597,6 +671,7 @@ if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
     - `/tags/hot`
     - `/users/currentUser`
     - `/register`
+    - `/search/article` (新增)
 
 ---
 
@@ -687,6 +762,7 @@ graph TD
 - `/tags/hot` 热门标签接口
 - `/users/currentUser` 当前用户信息接口
 - `/logout` 登出接口
+- `/search/article` 搜索接口（新增）
 
 ### 9.2 拦截器实现细节 🔧
 
@@ -1133,7 +1209,118 @@ public Result change(Long articleId) {
 
 ---
 
-## 📊 15. AOP日志记录
+## 15. 搜索功能实现 🔍
+
+### 15.1 功能概述
+
+搜索功能允许用户通过输入关键词来搜索匹配的文章标题，提供实时搜索建议：
+- 用户每输入一个字符即触发搜索请求
+- 搜索结果最多显示5篇文章标题
+- 点击文章标题可跳转至文章详情页
+
+### 15.2 后端实现要点
+
+#### 搜索流程
+1. 接收用户输入的搜索关键词
+2. 使用MyBatis Plus的LambdaQueryWrapper进行模糊查询
+3. 限制结果最多返回5条记录
+4. 返回文章ID和标题的简化信息
+
+#### 关键代码示例
+
+```java
+@RestController
+@RequestMapping("/search")
+public class SearchController {
+
+    @Autowired
+    private ArticleService articleService;
+
+    /**
+     * 搜索文章接口
+     * @param search 搜索关键字
+     * @return 搜索结果
+     */
+    @GetMapping("/article")
+    @LogAnnotation(module = "搜索", operator = "搜索文章")
+    public Result searchArticles(@RequestParam String search) {
+        List<HotArticleVo> articles = articleService.searchArticles(search);
+        return Result.success(articles);
+    }
+}
+```
+
+```java
+@Service
+public class ArticleServiceImpl implements ArticleService {
+    
+    // ... 其他代码 ...
+    
+    @Override
+    public List<HotArticleVo> searchArticles(String search) {
+        LambdaQueryWrapper<Article> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.like(Article::getTitle, search);
+        queryWrapper.last("LIMIT 5");
+        List<Article> articles = articleMapper.selectList(queryWrapper);
+        
+        List<HotArticleVo> articleVos = new ArrayList<>();
+        for (Article article : articles) {
+            HotArticleVo hotArticleVo = new HotArticleVo();
+            hotArticleVo.setId(article.getId());
+            hotArticleVo.setTitle(article.getTitle());
+            articleVos.add(hotArticleVo);
+        }
+        return articleVos;
+    }
+}
+```
+
+#### 数据库查询语句
+```sql
+SELECT id, title FROM article WHERE title LIKE '%关键词%' LIMIT 5
+```
+
+### 15.3 安全配置
+
+搜索接口已配置为公开接口，无需用户登录即可访问：
+```java
+.excludePathPatterns("/search/article");
+```
+
+### 15.4 接口设计
+
+#### 搜索文章接口
+- **URL**: `GET /search/article`
+- **参数**: `search` (字符串类型搜索关键词)
+- **返回**: 文章ID和标题列表，最多5条
+
+示例请求：
+```
+GET /search/article?search=Java
+```
+
+示例响应：
+```json
+{
+  "success": true,
+  "code": 200,
+  "msg": "",
+  "data": [
+    {
+      "id": 1,
+      "title": "Java编程入门"
+    },
+    {
+      "id": 2,
+      "title": "深入理解Java虚拟机"
+    }
+  ]
+}
+```
+
+---
+
+## 📊 16. AOP日志记录
 
 ### 🏷️ 1. 创建日志记录注解
 
@@ -1220,15 +1407,16 @@ public class LogAspect {
 在控制器方法上添加 [@LogAnnotation](file:///D:/blog_learn/myBlog/blog-parent/blog-api/src/main/java/com/itzpy/blog/aop/LogAnnotation.java) 注解：
 
 ```java
-@PostMapping
-@LogAnnotation(module = "文章", operator = "文章列表查询")
-public Result listArticle(@RequestBody PageParams pageParams) {
-    return articleService.listArticle(pageParams);
+@GetMapping("/article")
+@LogAnnotation(module = "搜索", operator = "搜索文章")
+public Result searchArticles(@RequestParam String search) {
+    List<HotArticleVo> articles = articleService.searchArticles(search);
+    return Result.success(articles);
 }
 ```
 
 
-## 🖼️ 16. 文章图片上传
+## 🖼️ 17. 文章图片上传
 
 ### 📡 接口信息
 - **URL**: `POST /upload`
@@ -1341,7 +1529,7 @@ qiniu:
 3. 上传成功后返回完整URL，前端可直接使用
 4. 错误处理：当文件名为空或上传失败时会返回相应的错误码
 
-## 🐞 17. 前端路由问题排查
+## 🐞 18. 前端路由问题排查
 
 ### 问题描述
 前端路由出现问题，标签的ID参数无法正确传递到后端，导致查询标签详情的接口在文档中无法体现，但通过Postman测试正常。
