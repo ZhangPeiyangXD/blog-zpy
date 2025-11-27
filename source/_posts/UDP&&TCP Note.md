@@ -107,7 +107,7 @@ title: UDP&&TCP Note
 
 #### 4.1.2 通信流程
 
-```mermaid
+```
 graph TD
 A[服务器启动] --> B[启动监控线程]
 B --> C[监听客户端连接]
@@ -207,7 +207,7 @@ UDP是一种无连接的协议，这意味着UDP服务器与TCP服务器在处�
 
 ### 6.1 TCP客户端源码
 
-```java
+```
 package main.java.itzpy.test.TCP;
 
 import java.io.DataOutputStream;
@@ -246,7 +246,7 @@ public class Client {
 
 ### 6.2 TCP服务端源码
 
-```java
+```
 package main.java.itzpy.test.TCP;
 
 import java.io.DataInputStream;
@@ -379,7 +379,7 @@ public class Service {
 
 ### 6.3 UDP客户端源码
 
-```java
+```
 package main.java.itzpy.test.UDP;
 
 import java.io.IOException;
@@ -419,7 +419,7 @@ public class Client {
 
 ### 6.4 UDP服务端源码
 
-```java
+```
 package main.java.itzpy.test.UDP;
 
 import java.io.IOException;
@@ -464,3 +464,292 @@ public class Service {
     }
 }
 ```
+
+## 7. CS架构与BS架构
+
+### 7.1 CS架构（Client/Server）
+
+#### 概念
+CS架构即客户端/服务器架构，是一种传统的分布式应用结构，其中客户端和服务器是分开的实体，客户端负责用户界面和部分业务逻辑，服务器负责数据存储和核心业务处理。
+
+#### 特点
+1. **客户端要求**：需要安装专门的客户端软件
+2. **交互方式**：客户端与服务器直接通信，通常使用自定义协议或标准网络协议如TCP/IP
+3. **处理能力分布**：业务逻辑分布在客户端和服务器两端
+4. **界面表现力**：客户端界面丰富，交互性强，可以实现复杂的功能
+5. **更新维护**：需要分别更新客户端和服务器端
+
+#### Java实现示例
+
+##### 客户端示例
+```
+package main.java.itzpy.test.TCP;
+
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.util.Scanner;
+
+public class Client {
+    public static void main(String[] args) throws IOException {
+        System.out.println("Client开始发送数据");
+        //创建客户端套接字
+        Socket socket = new Socket(InetAddress.getLocalHost(), 8888);
+        //创建数据输出流对象
+        OutputStream outputStream = socket.getOutputStream();
+        DataOutputStream dataOutputStream = new DataOutputStream(outputStream);
+        //写数据
+        while ( true){
+            System.out.println("请输入数据：");
+            Scanner scanner = new Scanner(System.in);
+            String data = scanner.nextLine();
+
+            dataOutputStream.writeUTF(data);
+
+            if(data.equals("exit")){
+                dataOutputStream.close();
+                break;
+            }
+        }
+
+        socket.close();
+    }
+}
+```
+
+##### 服务端示例
+```
+package main.java.itzpy.test.TCP;
+
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+public class Service {
+    // 存储活动的客户端线程
+    private static final List<Thread> clientThreads = new CopyOnWriteArrayList<>();
+    private static volatile boolean serverRunning = true;
+
+    public static void main(String[] args) throws IOException {
+        System.out.println("Service开始接收数据");
+        //创建服务端套接字
+        ServerSocket serverSocket = new ServerSocket(8888);
+
+        // 启动一个监控线程，用来检测是否需要关闭服务器
+        Thread monitorThread = new Thread(new ServerMonitor());
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+
+        // 主线程持续接收客户端连接
+        int clientCounter = 1;
+        while (serverRunning) {
+            try {
+                // 设置接受连接的超时时间，避免无限期阻塞
+                serverSocket.setSoTimeout(5000); // 5秒超时
+                Socket socket = serverSocket.accept();
+                
+                // 为新客户端创建处理线程
+                String clientId = "Client" + clientCounter++;
+                Thread clientThread = new Thread(new ClientHandler(socket, clientId));
+                clientThreads.add(clientThread);
+                clientThread.start();
+                
+                System.out.println("新客户端连接: " + clientId + " 来自 " + socket.getInetAddress().getHostAddress());
+            } catch (java.net.SocketTimeoutException e) {
+                // 超时继续循环，检查serverRunning状态
+                continue;
+            }
+        }
+
+        // 关闭TCP服务器套接字
+        serverSocket.close();
+        System.out.println("服务端已关闭");
+    }
+
+    static class ClientHandler implements Runnable {
+        private final Socket socket;
+        private final String clientId;
+        private boolean closed = false;
+
+        public ClientHandler(Socket socket, String clientId) {
+            this.socket = socket;
+            this.clientId = clientId;
+        }
+
+        @Override
+        public void run() {
+            try {
+                //获取输入流
+                InputStream is = socket.getInputStream();
+                DataInputStream dis = new DataInputStream(is);
+
+                //读取数据
+                while (!closed) {
+                    try {
+                        String data = dis.readUTF();
+                        System.out.println(clientId + ": " + data);
+                        System.out.println("来自IP地址: " + socket.getInetAddress().getHostAddress());
+                        System.out.println("--------------------------");
+
+                        if (data.equals("exit")) {
+                            closed = true;
+                            dis.close();
+                        }
+                    } catch (IOException e) {
+                        // 客户端异常断开
+                        System.out.println(clientId + " 异常断开连接");
+                        closed = true;
+                    }
+                }
+
+                socket.close();
+                System.out.println(clientId + " 已断开连接");
+            } catch (IOException e) {
+                if (!closed) {
+                    System.out.println(clientId + " 处理过程中发生错误: " + e.getMessage());
+                }
+            } finally {
+                // 从活动线程列表中移除当前线程
+                Thread currentThread = Thread.currentThread();
+                clientThreads.remove(currentThread);
+            }
+        }
+    }
+
+    static class ServerMonitor implements Runnable {
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Thread.sleep(5000); // 每5秒检查一次
+                    
+                    // 如果没有活动的客户端线程，则关闭服务器
+                    if (clientThreads.isEmpty()) {
+                        System.out.println("没有活动客户端，服务器将在下次检查时关闭...");
+                        Thread.sleep(5000); // 再等待5秒确认
+                        
+                        // 再次检查是否仍然没有客户端
+                        if (clientThreads.isEmpty()) {
+                            System.out.println("确认没有客户端连接，关闭服务器...");
+                            serverRunning = false;
+                            break;
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }
+    }
+}
+```
+
+### 7.2 BS架构（Browser/Server）
+
+#### 概念
+BS架构即浏览器/服务器架构，是Web应用的基础架构。在这种架构中，用户界面通过Web浏览器来实现，业务逻辑和数据存储都在服务器端处理。
+
+#### 特点
+1. **客户端要求**：只需标准Web浏览器，无需安装专门软件
+2. **交互方式**：通过HTTP/HTTPS协议进行通信
+3. **处理能力分布**：业务逻辑主要集中在服务器端
+4. **界面表现力**：依赖于Web技术（HTML/CSS/JavaScript），现代前端框架使其表现力大幅提升
+5. **更新维护**：更新只需在服务器端进行，客户端自动同步最新版本
+
+#### Java实现示例（使用HttpServer）
+
+##### 服务端示例
+```
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpExchange;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+
+public class HttpServerExample {
+    public static void main(String[] args) throws IOException {
+        // 创建HTTP服务器，绑定端口
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        
+        // 创建上下文，将路径映射到处理器
+        server.createContext("/", new MyHandler());
+        
+        // 启动服务器
+        server.setExecutor(null); // 使用默认executor
+        server.start();
+        
+        System.out.println("服务器已启动，监听端口 8080");
+    }
+    
+    static class MyHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            // 设置响应内容
+            String response = "<html><body><h1>Hello, World!</h1><p>这是一个简单的HTTP服务器示例。</p></body></html>";
+            
+            // 设置响应头
+            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+            
+            // 发送响应
+            exchange.sendResponseHeaders(200, response.getBytes().length);
+            OutputStream os = exchange.getResponseBody();
+            os.write(response.getBytes());
+            os.close();
+        }
+    }
+}
+```
+
+##### 客户端（浏览器端）
+浏览器端通过URL访问服务器，例如访问 `http://localhost:8080/`，服务器返回HTML页面，浏览器解析并展示给用户。
+
+### 7.3 CS架构与BS架构对比
+
+| 对比维度 | CS架构 | BS架构 |
+|---------|--------|--------|
+| 客户端要求 | 需安装专用客户端软件 | 只需标准浏览器 |
+| 更新方式 | 需手动更新客户端版本 | 服务器更新立即生效 |
+| 跨平台性 | 需开发不同系统版本 | 浏览器本身就是跨平台环境 |
+| 界面表现力 | 客户端可实现复杂界面 | 依赖Web技术，现代前端框架功能强大 |
+| 网络开销 | 直接通信，开销较小 | 基于HTTP协议，可能开销较大 |
+| 安全性 | 客户端可能暴露业务逻辑 | 业务逻辑集中在服务器端 |
+| 部署维护 | 部署复杂，维护成本高 | 部署简单，维护方便 |
+
+### 7.4 请求与响应机制
+
+#### CS架构中的请求与响应
+在CS架构中，客户端和服务端通过TCP连接直接通信：
+1. 客户端发起连接请求到服务器
+2. 服务器接受连接并创建Socket
+3. 双方通过Socket的输入输出流进行数据交换
+4. 通信完成后关闭连接
+
+#### BS架构中的请求与响应
+在BS架构中，浏览器和服务器通过HTTP协议通信：
+1. 浏览器向服务器发送HTTP请求（GET、POST等）
+2. 服务器接收请求并处理
+3. 服务器返回HTTP响应（包括状态码和响应体）
+4. 浏览器解析响应并渲染页面
+
+### 7.5 应用场景
+
+#### CS架构适用于：
+- 对响应速度要求高的系统
+- 用户界面交互复杂的应用
+- 局域网内部系统
+- 对安全性要求极高的系统
+
+#### BS架构适用于：
+- 需要跨平台访问的应用
+- 用户群体分散的互联网应用
+- 需要快速部署和更新的系统
+- 对维护成本敏感的项目
