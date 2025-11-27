@@ -104,6 +104,8 @@ title: UDP&&TCP Note
 - 只需要一个DatagramSocket：配合DatagramPacket使用
 - 像发短信/明信片：写上地址直接发，不管对方收没收到
 
+---
+
 ## 4. TCP通信实例分析
 
 ### 4.1 动态多客户端TCP服务器实现
